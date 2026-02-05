@@ -38,14 +38,6 @@ h2 {
     text-align: center;
 }
 
-.meta {
-    text-align: center;
-    font-size: 14px;
-    color: #374151;
-    margin-top: -6px;
-    margin-bottom: 14px;
-}
-
 .controls {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -130,7 +122,6 @@ button.secondary:hover {
 
 <div class="panel">
     <h2>Kontrola warstwa – sztuki do kontroli</h2>
-    <div class="meta" id="metaN">Liczba pól z Glide: —</div>
 
     <div class="controls">
         <div class="control">
@@ -157,34 +148,18 @@ button.secondary:hover {
   </div>
 </div>
 
-<!-- biblioteka do zrzutu do PNG -->
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
 <script>
+const ILE_POLOW = 10;
+
 let rows = 0;
 let cols = 0;
 let cells = [];
-let N_FROM_GLIDE = 10;
 
 const grid = document.getElementById("grid");
 const rowsInput = document.getElementById("rows");
 const colsInput = document.getElementById("cols");
-const metaN = document.getElementById("metaN");
-
-function getParamInt(name, fallback) {
-  const v = new URLSearchParams(window.location.search).get(name);
-  const n = parseInt(v, 10);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function updateMeta() {
-  metaN.textContent = `Liczba pól z Glide: ${N_FROM_GLIDE}`;
-}
-
-window.addEventListener("DOMContentLoaded", () => {
-  N_FROM_GLIDE = Math.max(1, getParamInt("n", 10));
-  updateMeta();
-});
 
 function generateGrid() {
     rows = Math.max(1, +rowsInput.value);
@@ -207,52 +182,92 @@ function generateGrid() {
 
 function shuffle(arr) { return arr.sort(() => Math.random() - 0.5); }
 
+function clearActive() {
+  if (!cells.length) return;
+  cells.flat().forEach(c => c.classList.remove("active"));
+}
+
+function setActive(r, c) {
+  cells[r][c].classList.add("active");
+}
+
+function randomCol() {
+  return Math.floor(Math.random() * cols);
+}
+
 function randomize() {
     if (!cells.length) return;
 
-    const maxCells = rows * cols;
-    const ILE_POLOW = Math.min(maxCells, Math.max(1, N_FROM_GLIDE));
+    clearActive();
 
-    cells.flat().forEach(c => c.classList.remove("active"));
+    const totalCells = rows * cols;
+    const target = Math.min(ILE_POLOW, totalCells); // jeśli siatka < 10 pól, nie da się zaznaczyć 10
 
-    // FIX: gdy ILE_POLOW == 1, losujemy dokładnie 1 pole
-    if (ILE_POLOW === 1) {
-        const r = Math.floor(Math.random() * rows);
-        const c = Math.floor(Math.random() * cols);
-        cells[r][c].classList.add("active");
+    // Specjalny przypadek: 1 wiersz -> musimy zrobić 10 (lub mniej) w tym wierszu, unikalne kolumny jeśli się da
+    if (rows === 1) {
+      const used = new Set();
+      while (used.size < target) {
+        const c = randomCol();
+        used.add(c);
+        // jeśli cols < target, Set się zatrzyma na cols; wtedy i tak target został obcięty do totalCells, więc będzie ok
+      }
+      for (const c of used) setActive(0, c);
+
+      // jeśli cols < target (np. 1x3 a target=3) to used.size==3 i OK.
+      return;
+    }
+
+    // Przypadek 4️⃣: rows > 10 => wybieramy dokładnie 10 wierszy (zawsze 1 i ostatni) i po 1 polu
+    if (rows > ILE_POLOW) {
+        const selectedRows = new Set();
+        selectedRows.add(0);
+        selectedRows.add(rows - 1);
+
+        const middle = Array.from({length: rows - 2}, (_, i) => i + 1); // 1..rows-2
+        shuffle(middle);
+
+        while (selectedRows.size < ILE_POLOW) {
+          selectedRows.add(middle.pop());
+        }
+
+        // po 1 polu w każdym z 10 wierszy
+        for (const r of selectedRows) {
+          setActive(r, randomCol());
+        }
         return;
     }
 
-    if (rows >= ILE_POLOW) {
-        if (rows === ILE_POLOW) {
-            for (let r = 0; r < rows; r++) {
-                const c = Math.floor(Math.random() * cols);
-                cells[r][c].classList.add("active");
-            }
-        } else {
-            const availableRows = Array.from({length: rows}, (_, i) => i);
+    // Przypadek 3️⃣: rows <= 10 => każdy wiersz ma >=1 pole, reszta (do 10) doklejona losowo w wierszach
+    // Krok 1: po 1 na każdy wiersz (gwarantuje pierwszy i ostatni)
+    for (let r = 0; r < rows; r++) {
+      setActive(r, randomCol());
+    }
 
-            // wybierz ILE_POLOW unikalnych wierszy
-            const selectedRows = shuffle(availableRows).slice(0, ILE_POLOW);
+    // ile jeszcze musimy dodać, żeby było target pól
+    let already = rows; // bo dodaliśmy 1 na wiersz
+    let remaining = target - already;
 
-            selectedRows.forEach(r => {
-                const c = Math.floor(Math.random() * cols);
-                cells[r][c].classList.add("active");
-            });
-        }
-    } else {
-        const selected = new Set();
+    // Jeśli rows == target, to mamy już dokładnie target i koniec.
+    if (remaining <= 0) return;
 
-        while (selected.size < ILE_POLOW) {
-            const r = Math.floor(Math.random() * rows);
-            const c = Math.floor(Math.random() * cols);
-            selected.add(`${r},${c}`);
-        }
+    // Krok 2: dokładamy pozostałe pola w losowych wierszach.
+    // Pilnujemy unikalności komórek (żeby nie “dodać” tego samego pola drugi raz).
+    const activeSet = new Set();
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (cells[r][c].classList.contains("active")) activeSet.add(`${r},${c}`);
+      }
+    }
 
-        for (const key of selected) {
-            const [r, c] = key.split(",").map(Number);
-            cells[r][c].classList.add("active");
-        }
+    while (remaining > 0) {
+      const r = Math.floor(Math.random() * rows);
+      const c = randomCol();
+      const key = `${r},${c}`;
+      if (!activeSet.has(key)) {
+        activeSet.add(key);
+        setActive(r, c);
+        remaining--;
+      }
     }
 }
 
@@ -263,11 +278,9 @@ async function saveImage() {
     const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff" });
 
     const dataUrl = canvas.toDataURL("image/png");
-
-    // wymuszenie pobrania
     const a = document.createElement("a");
     a.href = dataUrl;
-    a.download = `losowanie_${rows}x${cols}_n${N_FROM_GLIDE}.png`;
+    a.download = `losowanie_${rows}x${cols}.png`;
     document.body.appendChild(a);
     a.click();
     a.remove();
