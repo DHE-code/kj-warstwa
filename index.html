@@ -90,18 +90,29 @@ button {
 
 button:hover { background: var(--primary-hover); }
 
+button.secondary {
+    background: #111827;
+}
+button.secondary:hover {
+    background: #000000;
+}
+
 .grid-container {
     display: flex;
     justify-content: center;
     width: 100%;
 }
 
+.grid-wrap {
+    background: white;
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.06);
+}
+
 .grid {
     display: grid;
     gap: 3px;
-    padding: 12px;
-    background: white;
-    border-radius: 12px;
 }
 
 .cell {
@@ -136,18 +147,24 @@ button:hover { background: var(--primary-hover); }
     <div class="buttons">
         <button onclick="generateGrid()">Generuj</button>
         <button onclick="randomize()">Losuj</button>
+        <button class="secondary" onclick="saveImage()">Zapisz obraz</button>
     </div>
 </div>
 
 <div class="grid-container">
-    <div id="grid" class="grid"></div>
+  <div class="grid-wrap" id="capture">
+      <div id="grid" class="grid"></div>
+  </div>
 </div>
+
+<!-- biblioteka do zrzutu do PNG -->
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
 <script>
 let rows = 0;
 let cols = 0;
 let cells = [];
-let N_FROM_GLIDE = 10; // domyślnie, gdy Glide nie poda parametru
+let N_FROM_GLIDE = 10;
 
 const grid = document.getElementById("grid");
 const rowsInput = document.getElementById("rows");
@@ -167,17 +184,11 @@ function updateMeta() {
 window.addEventListener("DOMContentLoaded", () => {
   N_FROM_GLIDE = Math.max(1, getParamInt("n", 10));
   updateMeta();
-  // nie generuję automatycznie siatki, bo wymiary ustawiasz ręcznie;
-  // jeśli chcesz auto-start, odkomentuj:
-  // generateGrid();
 });
 
 function generateGrid() {
-    rows = +rowsInput.value;
-    cols = +colsInput.value;
-
-    rows = Math.max(1, rows);
-    cols = Math.max(1, cols);
+    rows = Math.max(1, +rowsInput.value);
+    cols = Math.max(1, +colsInput.value);
 
     grid.innerHTML = "";
     grid.style.gridTemplateColumns = `repeat(${cols}, 30px)`;
@@ -199,11 +210,18 @@ function shuffle(arr) { return arr.sort(() => Math.random() - 0.5); }
 function randomize() {
     if (!cells.length) return;
 
-    // bierzemy liczbę pól z Glide i ograniczamy do rozmiaru siatki
     const maxCells = rows * cols;
     const ILE_POLOW = Math.min(maxCells, Math.max(1, N_FROM_GLIDE));
 
     cells.flat().forEach(c => c.classList.remove("active"));
+
+    // FIX: gdy ILE_POLOW == 1, losujemy dokładnie 1 pole
+    if (ILE_POLOW === 1) {
+        const r = Math.floor(Math.random() * rows);
+        const c = Math.floor(Math.random() * cols);
+        cells[r][c].classList.add("active");
+        return;
+    }
 
     if (rows >= ILE_POLOW) {
         if (rows === ILE_POLOW) {
@@ -213,13 +231,9 @@ function randomize() {
             }
         } else {
             const availableRows = Array.from({length: rows}, (_, i) => i);
-            const selectedRows = [0, rows - 1];
-            const remaining = ILE_POLOW - selectedRows.length;
 
-            if (remaining > 0) {
-              const middleRows = shuffle(availableRows.slice(1, rows - 1)).slice(0, remaining);
-              selectedRows.push(...middleRows);
-            }
+            // wybierz ILE_POLOW unikalnych wierszy
+            const selectedRows = shuffle(availableRows).slice(0, ILE_POLOW);
 
             selectedRows.forEach(r => {
                 const c = Math.floor(Math.random() * cols);
@@ -227,25 +241,36 @@ function randomize() {
             });
         }
     } else {
-        const selectedCells = [];
+        const selected = new Set();
 
-        for (let r = 0; r < rows; r++) {
-            selectedCells.push({ r, c: Math.floor(Math.random() * cols) });
-        }
-
-        let remaining = ILE_POLOW - selectedCells.length;
-
-        while (remaining > 0) {
+        while (selected.size < ILE_POLOW) {
             const r = Math.floor(Math.random() * rows);
             const c = Math.floor(Math.random() * cols);
-            if (!selectedCells.some(p => p.r === r && p.c === c)) {
-                selectedCells.push({ r, c });
-                remaining--;
-            }
+            selected.add(`${r},${c}`);
         }
 
-        selectedCells.forEach(p => cells[p.r][p.c].classList.add("active"));
+        for (const key of selected) {
+            const [r, c] = key.split(",").map(Number);
+            cells[r][c].classList.add("active");
+        }
     }
+}
+
+async function saveImage() {
+    if (!cells.length) return;
+
+    const el = document.getElementById("capture");
+    const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff" });
+
+    const dataUrl = canvas.toDataURL("image/png");
+
+    // wymuszenie pobrania
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = `losowanie_${rows}x${cols}_n${N_FROM_GLIDE}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
 }
 </script>
 
