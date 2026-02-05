@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>Kontrola warstwa – losowanie pól</title>
+
+<style>
+:root {
+    --bg: #f5f7fa;
+    --panel: #ffffff;
+    --primary: #2563eb;
+    --primary-hover: #1e40af;
+    --accent: #f59e0b;
+    --border: #d1d5db;
+}
+
+body {
+    font-family: "Segoe UI", Arial, sans-serif;
+    background: var(--bg);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.panel {
+    background: var(--panel);
+    padding: 20px 25px;
+    border-radius: 10px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+    margin-bottom: 20px;
+    width: 100%;
+    max-width: 520px;
+}
+
+h2 {
+    margin-top: 0;
+    text-align: center;
+}
+
+.controls {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 15px;
+}
+
+.control {
+    display: flex;
+    flex-direction: column;
+    font-size: 14px;
+}
+
+.control label {
+    margin-bottom: 4px;
+    color: #374151;
+}
+
+.control input {
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    font-size: 15px;
+}
+
+.buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: space-between;
+}
+
+button {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    color: white;
+    background: var(--primary);
+}
+
+button:hover { background: var(--primary-hover); }
+button.print { background: var(--accent); }
+
+.grid-container {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+}
+
+.grid {
+    display: grid;
+    gap: 3px;
+    padding: 12px;
+    background: white;
+    border-radius: 12px;
+}
+
+.cell {
+    width: 30px;
+    height: 30px;
+    background: #e5e7eb;
+    border: 1px solid #cbd5e1;
+}
+
+.cell.active { background: var(--accent); }
+
+@media print {
+    body { background: white; }
+    .panel, .buttons { display: none !important; }
+    
+    .print-title { display: block !important; font-size: 16px; text-align: center; margin-bottom: 10px; font-weight: bold; }
+    
+    .print-header { display: block !important; margin-bottom: 15px; font-size: 14px; }
+    .print-header strong { display: inline-block; width: 140px; }
+    
+    .cell { background: white !important; border: 1px solid black; }
+    .cell.active::after { content: "X"; display: block; text-align: center; font-weight: bold; line-height: 30px; }
+}
+
+.print-header, .print-title { display: none; }
+</style>
+</head>
+
+<body>
+
+<!-- TYTUŁ DO DRUKU -->
+<div class="print-title">Kontrola warstwa – sztuki do kontroli</div>
+
+<!-- DANE DO DRUKU -->
+<div class="print-header">
+    <div><strong>Operator:</strong> <span id="p-operator"></span></div>
+    <div><strong>Kontroler:</strong> <span id="p-kontroler"></span></div>
+    <div><strong>Data:</strong> <span id="p-data"></span></div>
+    <div><strong>Zmiana:</strong> <span id="p-zmiana"></span></div>
+    <hr>
+</div>
+
+<div class="panel">
+    <h2>Kontrola warstwa – sztuki do kontroli</h2>
+
+    <div class="controls">
+        <div class="control">
+            <label>Operator</label>
+            <input id="operator">
+        </div>
+
+        <div class="control">
+            <label>Kontroler</label>
+            <input id="kontroler">
+        </div>
+
+        <div class="control">
+            <label>Data</label>
+            <input type="date" id="data">
+        </div>
+
+        <div class="control">
+            <label>Zmiana</label>
+            <input id="zmiana" placeholder="np. I / II / III">
+        </div>
+
+        <div class="control">
+            <label>Y (wiersze)</label>
+            <input type="number" id="rows" value="10" min="1">
+        </div>
+
+        <div class="control">
+            <label>X (kolumny)</label>
+            <input type="number" id="cols" value="10" min="1">
+        </div>
+    </div>
+
+    <div class="buttons">
+        <button onclick="generateGrid()">Generuj</button>
+        <button onclick="randomize()">Losuj</button>
+        <button class="print" onclick="preparePrint()">Drukuj</button>
+    </div>
+</div>
+
+<div class="grid-container">
+    <div id="grid" class="grid"></div>
+</div>
+
+<script>
+const ILE_POLOW = 10;
+let rows = 0;
+let cols = 0;
+let cells = [];
+
+const grid = document.getElementById("grid");
+const rowsInput = document.getElementById("rows");
+const colsInput = document.getElementById("cols");
+
+const operator = document.getElementById("operator");
+const kontroler = document.getElementById("kontroler");
+const data = document.getElementById("data");
+const zmiana = document.getElementById("zmiana");
+
+const pOperator = document.getElementById("p-operator");
+const pKontroler = document.getElementById("p-kontroler");
+const pData = document.getElementById("p-data");
+const pZmiana = document.getElementById("p-zmiana");
+
+function generateGrid() {
+    rows = +rowsInput.value;
+    cols = +colsInput.value;
+    grid.innerHTML = "";
+    grid.style.gridTemplateColumns = `repeat(${cols}, 30px)`;
+    cells = [];
+
+    for (let r = 0; r < rows; r++) {
+        cells[r] = [];
+        for (let c = 0; c < cols; c++) {
+            const d = document.createElement("div");
+            d.className = "cell";
+            grid.appendChild(d);
+            cells[r][c] = d;
+        }
+    }
+}
+
+function shuffle(arr) { return arr.sort(() => Math.random() - 0.5); }
+
+function randomize() {
+    if (!cells.length) return;
+    cells.flat().forEach(c => c.classList.remove("active"));
+
+    if (rows >= ILE_POLOW) {
+        if (rows === ILE_POLOW) {
+            for (let r = 0; r < rows; r++) {
+                const c = Math.floor(Math.random() * cols);
+                cells[r][c].classList.add("active");
+            }
+        } else {
+            const availableRows = Array.from({length: rows}, (_, i) => i);
+            const selectedRows = [0, rows - 1];
+            const remaining = ILE_POLOW - selectedRows.length;
+            const middleRows = shuffle(availableRows.slice(1, rows - 1)).slice(0, remaining);
+            selectedRows.push(...middleRows);
+            selectedRows.forEach(r => {
+                const c = Math.floor(Math.random() * cols);
+                cells[r][c].classList.add("active");
+            });
+        }
+    } else {
+        const selectedCells = [];
+        for (let r = 0; r < rows; r++) {
+            selectedCells.push({ r, c: Math.floor(Math.random() * cols) });
+        }
+        let remaining = ILE_POLOW - selectedCells.length;
+        while (remaining > 0) {
+            const r = Math.floor(Math.random() * rows);
+            const c = Math.floor(Math.random() * cols);
+            if (!selectedCells.some(p => p.r === r && p.c === c)) {
+                selectedCells.push({ r, c });
+                remaining--;
+            }
+        }
+        selectedCells.forEach(p => cells[p.r][p.c].classList.add("active"));
+    }
+}
+
+function preparePrint() {
+    pOperator.textContent = operator.value;
+    pKontroler.textContent = kontroler.value;
+    pData.textContent = data.value;
+    pZmiana.textContent = zmiana.value;
+    window.print();
+}
+</script>
+
+</body>
+</html>
+
+
