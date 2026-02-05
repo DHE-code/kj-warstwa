@@ -81,7 +81,6 @@ button {
 }
 
 button:hover { background: var(--primary-hover); }
-button.print { background: var(--accent); }
 
 .grid-container {
     display: flex;
@@ -105,62 +104,15 @@ button.print { background: var(--accent); }
 }
 
 .cell.active { background: var(--accent); }
-
-@media print {
-    body { background: white; }
-    .panel, .buttons { display: none !important; }
-    
-    .print-title { display: block !important; font-size: 16px; text-align: center; margin-bottom: 10px; font-weight: bold; }
-    
-    .print-header { display: block !important; margin-bottom: 15px; font-size: 14px; }
-    .print-header strong { display: inline-block; width: 140px; }
-    
-    .cell { background: white !important; border: 1px solid black; }
-    .cell.active::after { content: "X"; display: block; text-align: center; font-weight: bold; line-height: 30px; }
-}
-
-.print-header, .print-title { display: none; }
 </style>
 </head>
 
 <body>
 
-<!-- TYTUŁ DO DRUKU -->
-<div class="print-title">Kontrola warstwa – sztuki do kontroli</div>
-
-<!-- DANE DO DRUKU -->
-<div class="print-header">
-    <div><strong>Operator:</strong> <span id="p-operator"></span></div>
-    <div><strong>Kontroler:</strong> <span id="p-kontroler"></span></div>
-    <div><strong>Data:</strong> <span id="p-data"></span></div>
-    <div><strong>Zmiana:</strong> <span id="p-zmiana"></span></div>
-    <hr>
-</div>
-
 <div class="panel">
     <h2>Kontrola warstwa – sztuki do kontroli</h2>
 
     <div class="controls">
-        <div class="control">
-            <label>Operator</label>
-            <input id="operator">
-        </div>
-
-        <div class="control">
-            <label>Kontroler</label>
-            <input id="kontroler">
-        </div>
-
-        <div class="control">
-            <label>Data</label>
-            <input type="date" id="data">
-        </div>
-
-        <div class="control">
-            <label>Zmiana</label>
-            <input id="zmiana" placeholder="np. I / II / III">
-        </div>
-
         <div class="control">
             <label>Y (wiersze)</label>
             <input type="number" id="rows" value="10" min="1">
@@ -175,7 +127,6 @@ button.print { background: var(--accent); }
     <div class="buttons">
         <button onclick="generateGrid()">Generuj</button>
         <button onclick="randomize()">Losuj</button>
-        <button class="print" onclick="preparePrint()">Drukuj</button>
     </div>
 </div>
 
@@ -192,16 +143,6 @@ let cells = [];
 const grid = document.getElementById("grid");
 const rowsInput = document.getElementById("rows");
 const colsInput = document.getElementById("cols");
-
-const operator = document.getElementById("operator");
-const kontroler = document.getElementById("kontroler");
-const data = document.getElementById("data");
-const zmiana = document.getElementById("zmiana");
-
-const pOperator = document.getElementById("p-operator");
-const pKontroler = document.getElementById("p-kontroler");
-const pData = document.getElementById("p-data");
-const pZmiana = document.getElementById("p-zmiana");
 
 function generateGrid() {
     rows = +rowsInput.value;
@@ -261,17 +202,7 @@ function randomize() {
         selectedCells.forEach(p => cells[p.r][p.c].classList.add("active"));
     }
 }
-
-function preparePrint() {
-    pOperator.textContent = operator.value;
-    pKontroler.textContent = kontroler.value;
-    pData.textContent = data.value;
-    pZmiana.textContent = zmiana.value;
-    window.print();
-}
 </script>
 
 </body>
 </html>
-
-
