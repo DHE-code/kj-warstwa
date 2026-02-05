@@ -38,6 +38,14 @@ h2 {
     text-align: center;
 }
 
+.meta {
+    text-align: center;
+    font-size: 14px;
+    color: #374151;
+    margin-top: -6px;
+    margin-bottom: 14px;
+}
+
 .controls {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -111,6 +119,7 @@ button:hover { background: var(--primary-hover); }
 
 <div class="panel">
     <h2>Kontrola warstwa – sztuki do kontroli</h2>
+    <div class="meta" id="metaN">Liczba pól z Glide: —</div>
 
     <div class="controls">
         <div class="control">
@@ -121,11 +130,6 @@ button:hover { background: var(--primary-hover); }
         <div class="control">
             <label>X (kolumny)</label>
             <input type="number" id="cols" value="10" min="1">
-        </div>
-
-        <div class="control">
-            <label>Ile pól do zajęcia</label>
-            <input type="number" id="ilePol" value="10" min="1">
         </div>
     </div>
 
@@ -143,15 +147,38 @@ button:hover { background: var(--primary-hover); }
 let rows = 0;
 let cols = 0;
 let cells = [];
+let N_FROM_GLIDE = 10; // domyślnie, gdy Glide nie poda parametru
 
 const grid = document.getElementById("grid");
 const rowsInput = document.getElementById("rows");
 const colsInput = document.getElementById("cols");
-const ilePolInput = document.getElementById("ilePol");
+const metaN = document.getElementById("metaN");
+
+function getParamInt(name, fallback) {
+  const v = new URLSearchParams(window.location.search).get(name);
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function updateMeta() {
+  metaN.textContent = `Liczba pól z Glide: ${N_FROM_GLIDE}`;
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  N_FROM_GLIDE = Math.max(1, getParamInt("n", 10));
+  updateMeta();
+  // nie generuję automatycznie siatki, bo wymiary ustawiasz ręcznie;
+  // jeśli chcesz auto-start, odkomentuj:
+  // generateGrid();
+});
 
 function generateGrid() {
     rows = +rowsInput.value;
     cols = +colsInput.value;
+
+    rows = Math.max(1, rows);
+    cols = Math.max(1, cols);
+
     grid.innerHTML = "";
     grid.style.gridTemplateColumns = `repeat(${cols}, 30px)`;
     cells = [];
@@ -172,7 +199,9 @@ function shuffle(arr) { return arr.sort(() => Math.random() - 0.5); }
 function randomize() {
     if (!cells.length) return;
 
-    const ILE_POLOW = Math.max(1, +ilePolInput.value || 1);
+    // bierzemy liczbę pól z Glide i ograniczamy do rozmiaru siatki
+    const maxCells = rows * cols;
+    const ILE_POLOW = Math.min(maxCells, Math.max(1, N_FROM_GLIDE));
 
     cells.flat().forEach(c => c.classList.remove("active"));
 
@@ -186,8 +215,11 @@ function randomize() {
             const availableRows = Array.from({length: rows}, (_, i) => i);
             const selectedRows = [0, rows - 1];
             const remaining = ILE_POLOW - selectedRows.length;
-            const middleRows = shuffle(availableRows.slice(1, rows - 1)).slice(0, remaining);
-            selectedRows.push(...middleRows);
+
+            if (remaining > 0) {
+              const middleRows = shuffle(availableRows.slice(1, rows - 1)).slice(0, remaining);
+              selectedRows.push(...middleRows);
+            }
 
             selectedRows.forEach(r => {
                 const c = Math.floor(Math.random() * cols);
