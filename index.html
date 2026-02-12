@@ -153,6 +153,13 @@ button.secondary:hover {
 <script>
 const ILE_POLOW = 10;
 
+// 1) WEBHOOK z Make (albo innego narzędzia)
+const WEBHOOK_URL = "TU_WKLEJ_WEBHOOK_Z_MAKE";
+
+// 2) RowID z Glide wstrzyknij jako wartość do HTML (Value).
+// W Glide ustaw w HTML "Value" na kolumnę z RowID i wklej tu placeholder.
+const ROW_ID = "%%ROW_ID%%";
+
 let rows = 0;
 let cols = 0;
 let cells = [];
@@ -162,22 +169,22 @@ const rowsInput = document.getElementById("rows");
 const colsInput = document.getElementById("cols");
 
 function generateGrid() {
-    rows = Math.max(1, +rowsInput.value);
-    cols = Math.max(1, +colsInput.value);
+  rows = Math.max(1, +rowsInput.value);
+  cols = Math.max(1, +colsInput.value);
 
-    grid.innerHTML = "";
-    grid.style.gridTemplateColumns = `repeat(${cols}, 30px)`;
-    cells = [];
+  grid.innerHTML = "";
+  grid.style.gridTemplateColumns = `repeat(${cols}, 30px)`;
+  cells = [];
 
-    for (let r = 0; r < rows; r++) {
-        cells[r] = [];
-        for (let c = 0; c < cols; c++) {
-            const d = document.createElement("div");
-            d.className = "cell";
-            grid.appendChild(d);
-            cells[r][c] = d;
-        }
+  for (let r = 0; r < rows; r++) {
+    cells[r] = [];
+    for (let c = 0; c < cols; c++) {
+      const d = document.createElement("div");
+      d.className = "cell";
+      grid.appendChild(d);
+      cells[r][c] = d;
     }
+  }
 }
 
 function shuffle(arr) { return arr.sort(() => Math.random() - 0.5); }
@@ -196,96 +203,119 @@ function randomCol() {
 }
 
 function randomize() {
-    if (!cells.length) return;
+  if (!cells.length) return;
 
-    clearActive();
+  clearActive();
 
-    const totalCells = rows * cols;
-    const target = Math.min(ILE_POLOW, totalCells); // jeśli siatka < 10 pól, nie da się zaznaczyć 10
+  const totalCells = rows * cols;
+  const target = Math.min(ILE_POLOW, totalCells);
 
-    // Specjalny przypadek: 1 wiersz -> musimy zrobić 10 (lub mniej) w tym wierszu, unikalne kolumny jeśli się da
-    if (rows === 1) {
-      const used = new Set();
-      while (used.size < target) {
-        const c = randomCol();
-        used.add(c);
-        // jeśli cols < target, Set się zatrzyma na cols; wtedy i tak target został obcięty do totalCells, więc będzie ok
-      }
-      for (const c of used) setActive(0, c);
+  if (rows === 1) {
+    const used = new Set();
+    while (used.size < target) {
+      used.add(randomCol());
+    }
+    for (const c of used) setActive(0, c);
+    return;
+  }
 
-      // jeśli cols < target (np. 1x3 a target=3) to used.size==3 i OK.
-      return;
+  if (rows > ILE_POLOW) {
+    const selectedRows = new Set();
+    selectedRows.add(0);
+    selectedRows.add(rows - 1);
+
+    const middle = Array.from({ length: rows - 2 }, (_, i) => i + 1);
+    shuffle(middle);
+
+    while (selectedRows.size < ILE_POLOW) {
+      selectedRows.add(middle.pop());
     }
 
-    // Przypadek 4️⃣: rows > 10 => wybieramy dokładnie 10 wierszy (zawsze 1 i ostatni) i po 1 polu
-    if (rows > ILE_POLOW) {
-        const selectedRows = new Set();
-        selectedRows.add(0);
-        selectedRows.add(rows - 1);
-
-        const middle = Array.from({length: rows - 2}, (_, i) => i + 1); // 1..rows-2
-        shuffle(middle);
-
-        while (selectedRows.size < ILE_POLOW) {
-          selectedRows.add(middle.pop());
-        }
-
-        // po 1 polu w każdym z 10 wierszy
-        for (const r of selectedRows) {
-          setActive(r, randomCol());
-        }
-        return;
-    }
-
-    // Przypadek 3️⃣: rows <= 10 => każdy wiersz ma >=1 pole, reszta (do 10) doklejona losowo w wierszach
-    // Krok 1: po 1 na każdy wiersz (gwarantuje pierwszy i ostatni)
-    for (let r = 0; r < rows; r++) {
+    for (const r of selectedRows) {
       setActive(r, randomCol());
     }
+    return;
+  }
 
-    // ile jeszcze musimy dodać, żeby było target pól
-    let already = rows; // bo dodaliśmy 1 na wiersz
-    let remaining = target - already;
+  for (let r = 0; r < rows; r++) {
+    setActive(r, randomCol());
+  }
 
-    // Jeśli rows == target, to mamy już dokładnie target i koniec.
-    if (remaining <= 0) return;
+  let remaining = target - rows;
+  if (remaining <= 0) return;
 
-    // Krok 2: dokładamy pozostałe pola w losowych wierszach.
-    // Pilnujemy unikalności komórek (żeby nie “dodać” tego samego pola drugi raz).
-    const activeSet = new Set();
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (cells[r][c].classList.contains("active")) activeSet.add(`${r},${c}`);
-      }
+  const activeSet = new Set();
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (cells[r][c].classList.contains("active")) activeSet.add(`${r},${c}`);
     }
+  }
 
-    while (remaining > 0) {
-      const r = Math.floor(Math.random() * rows);
-      const c = randomCol();
-      const key = `${r},${c}`;
-      if (!activeSet.has(key)) {
-        activeSet.add(key);
-        setActive(r, c);
-        remaining--;
-      }
+  while (remaining > 0) {
+    const r = Math.floor(Math.random() * rows);
+    const c = randomCol();
+    const key = `${r},${c}`;
+    if (!activeSet.has(key)) {
+      activeSet.add(key);
+      setActive(r, c);
+      remaining--;
     }
+  }
 }
 
+// Zapis DO GLIDE: generujemy PNG -> base64 -> wysyłamy do webhooka
 async function saveImage() {
-    if (!cells.length) return;
+  if (!cells.length) return;
 
-    const el = document.getElementById("capture");
-    const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff" });
+  const el = document.getElementById("capture");
+  const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff" });
 
-    const dataUrl = canvas.toDataURL("image/png");
-    const a = document.createElement("a");
-    a.href = dataUrl;
-    a.download = `losowanie_${rows}x${cols}.png`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+  const dataUrl = canvas.toDataURL("image/png");
+  const base64 = dataUrl.split(",")[1];
+
+  const payload = {
+    rowId: ROW_ID,
+    rows,
+    cols,
+    filename: `losowanie_${rows}x${cols}.png`,
+    mime: "image/png",
+    base64
+  };
+
+  // prosty “lock” na wypadek wielokliku
+  const btn = document.querySelector("button.secondary");
+  if (btn) { btn.disabled = true; btn.textContent = "Wysyłam..."; }
+
+  try {
+    const res = await fetch(WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(`Webhook error: ${res.status} ${t}`);
+    }
+
+    // opcjonalnie: webhook może zwracać JSON { ok:true }
+    // const out = await res.json().catch(() => null);
+
+    if (btn) { btn.textContent = "Zapisano ✓"; }
+    setTimeout(() => { if (btn) btn.textContent = "Zapisz obraz"; }, 1200);
+  } catch (e) {
+    console.error(e);
+    if (btn) btn.textContent = "Błąd wysyłki";
+    setTimeout(() => { if (btn) btn.textContent = "Zapisz obraz"; }, 1500);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
+
+// opcjonalnie: start
+generateGrid();
 </script>
+
 
 </body>
 </html>
