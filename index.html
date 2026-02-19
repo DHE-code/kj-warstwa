@@ -161,6 +161,15 @@ const grid = document.getElementById("grid");
 const rowsInput = document.getElementById("rows");
 const colsInput = document.getElementById("cols");
 
+
+function getParam(name) {
+  const v = new URLSearchParams(window.location.search).get(name);
+  return v ? v.trim() : "";
+}
+
+const WEBHOOK_URL = getParam("webhook");
+
+
 function generateGrid() {
     rows = Math.max(1, +rowsInput.value);
     cols = Math.max(1, +colsInput.value);
@@ -194,6 +203,7 @@ function setActive(r, c) {
 function randomCol() {
   return Math.floor(Math.random() * cols);
 }
+
 
 function randomize() {
     if (!cells.length) return;
@@ -258,21 +268,60 @@ function randomize() {
     }
 }
 
+
+async function sendToWebhook(webhookUrl, payload) {
+  const res = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`Webhook HTTP ${res.status} ${res.statusText} ${txt}`);
+  }
+
+  try { return await res.json(); }
+  catch { return await res.text(); }
+}
+
+
 async function saveImage() {
     if (!cells.length) return;
 
     const el = document.getElementById("capture");
     const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff" });
-
     const dataUrl = canvas.toDataURL("image/png");
+
+    // zapis lokalny
     const a = document.createElement("a");
     a.href = dataUrl;
     a.download = `losowanie_${rows}x${cols}.png`;
     document.body.appendChild(a);
     a.click();
     a.remove();
+
+    // wysyłka do webhooka
+    if (WEBHOOK_URL) {
+      const payload = {
+        filename: `losowanie_${rows}x${cols}.png`,
+        rows,
+        cols,
+        image_data_url: dataUrl,
+        active: cells.flatMap((cell, idx) => {
+          if (!cell.classList.contains("active")) return [];
+          const r = Math.floor(idx / cols);
+          const c = idx % cols;
+          return [{ r, c }];
+        }),
+        ts: new Date().toISOString(),
+      };
+
+      await sendToWebhook(WEBHOOK_URL, payload);
+    }
 }
 </script>
+
 
 </body>
 </html>
