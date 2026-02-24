@@ -151,10 +151,8 @@ button.secondary:hover {
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
 <script>
-/* ================== CONFIG ================== */
 const ILE_POLOW = 10;
 
-/* ================== STATE ================== */
 let rows = 0;
 let cols = 0;
 let cells = [];
@@ -163,19 +161,19 @@ const grid = document.getElementById("grid");
 const rowsInput = document.getElementById("rows");
 const colsInput = document.getElementById("cols");
 
-/* ================== URL PARAMS ================== */
 function getParam(name) {
   const v = new URLSearchParams(window.location.search).get(name);
   return v ? v.trim() : "";
 }
 
 // Link w Glide buduj tak:
-// https://dhe-code.github.io/kj-warstwa/?id_box=123&numer_warstwy=2&webhook=MAKE_WEBHOOK
-const WEBHOOK_URL = getParam("webhook");
-const ID_BOX = getParam("id_box");
+// https://dhe-code.github.io/kj-warstwa/?id_box=IDBOX&numer_warstwy=NUMER&webhook=MAKE_WEBHOOK
+const WEBHOOK_URL   = getParam("webhook");
+const ID_BOX        = getParam("id_box");
 const NUMER_WARSTWY = getParam("numer_warstwy");
 
 /* ================== GRID ================== */
+
 function generateGrid() {
   rows = Math.max(1, +rowsInput.value);
   cols = Math.max(1, +colsInput.value);
@@ -195,9 +193,7 @@ function generateGrid() {
   }
 }
 
-function shuffle(arr) {
-  return arr.sort(() => Math.random() - 0.5);
-}
+function shuffle(arr) { return arr.sort(() => Math.random() - 0.5); }
 
 function clearActive() {
   if (!cells.length) return;
@@ -219,6 +215,7 @@ function randomCol() {
 }
 
 /* ================== RANDOMIZE ================== */
+
 function randomize() {
   if (!cells.length) return;
 
@@ -272,11 +269,46 @@ function randomize() {
   }
 }
 
-/* ================== SAVE IMAGE (MULTIPART -> MAKE) ================== */
+/* ================== WEBHOOK (multipart/form-data) ================== */
+
+async function sendToWebhookMultipart(webhookUrl, fileBlob, filename, payloadJson) {
+  const fd = new FormData();
+
+  // pola tekstowe (OSOBNO jak wcześniej)
+  fd.append("id_box", payloadJson.id_box);
+  fd.append("numer_warstwy", payloadJson.numer_warstwy);
+
+  fd.append("filename", filename);
+  fd.append("rows", String(payloadJson.rows));
+  fd.append("cols", String(payloadJson.cols));
+  fd.append("active", JSON.stringify(payloadJson.active));
+  fd.append("ts", payloadJson.ts);
+  fd.append("page_url", payloadJson.page_url);
+
+  // plik
+  fd.append("file", fileBlob, filename);
+
+  const res = await fetch(webhookUrl, {
+    method: "POST",
+    body: fd,
+    keepalive: true,
+  });
+
+  const txt = await res.text().catch(() => "");
+  if (!res.ok) {
+    throw new Error(`Webhook HTTP ${res.status}: ${txt || res.statusText}`);
+  }
+
+  try { return txt ? JSON.parse(txt) : { ok: true }; }
+  catch { return { ok: true, raw: txt }; }
+}
+
+/* ================== SAVE IMAGE ================== */
+
 async function saveImage() {
   if (!cells.length) return;
 
-  // aktywne pola
+  // Zbierz aktywne pola (bezpiecznie)
   const active = [];
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -292,56 +324,53 @@ async function saveImage() {
     return;
   }
 
-  if (!ID_BOX || !NUMER_WARSTWY || !WEBHOOK_URL) {
-    alert("Brakuje parametrów id_box / numer_warstwy / webhook w linku.");
+  if (!ID_BOX) {
+    alert("Brak parametru id_box w linku.");
+    return;
+  }
+
+  if (!NUMER_WARSTWY) {
+    alert("Brak parametru numer_warstwy w linku.");
+    return;
+  }
+
+  if (!WEBHOOK_URL) {
+    alert("Brak parametru webhook w linku.");
     return;
   }
 
   const el = document.getElementById("capture");
   const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff" });
 
-  const filename = `losowanie_${rows}x${cols}_box${ID_BOX}_w${NUMER_WARSTWY}.png`;
+  const filename = `losowanie_${rows}x${cols}.png`;
 
-  // blob z canvasa
-  const blob = await new Promise((resolve, reject) => {
-    canvas.toBlob((b) => {
-      if (b) resolve(b);
-      else reject(new Error("Błąd canvas.toBlob"));
-    }, "image/png");
-  });
-
-  // zapis lokalny (opcjonalnie – zostawiam jak było)
-  const localUrl = URL.createObjectURL(blob);
+  // zapis lokalny (jak było)
+  const dataUrl = canvas.toDataURL("image/png");
   const a = document.createElement("a");
-  a.href = localUrl;
+  a.href = dataUrl;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(localUrl);
 
-  // multipart do Make
-  const fd = new FormData();
+  // canvas -> Blob (plik)
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("canvas.toBlob zwrócił null"))), "image/png");
+  });
 
-  // plik binarny
-  fd.append("file", blob, filename);
-
-  // pola tekstowe (osobno jak chciałeś)
-  fd.append("id_box", ID_BOX);
-  fd.append("numer_warstwy", NUMER_WARSTWY);
-  fd.append("filename", filename);
-  fd.append("rows", String(rows));
-  fd.append("cols", String(cols));
-  fd.append("active", JSON.stringify(active));
-  fd.append("ts", new Date().toISOString());
-  fd.append("page_url", window.location.href);
+  // payload (bez base64!)
+  const payload = {
+    id_box: ID_BOX,
+    numer_warstwy: NUMER_WARSTWY,
+    rows,
+    cols,
+    active,
+    ts: new Date().toISOString(),
+    page_url: window.location.href
+  };
 
   try {
-    await fetch(WEBHOOK_URL, {
-      method: "POST",
-      body: fd,
-      keepalive: true,
-    });
+    await sendToWebhookMultipart(WEBHOOK_URL, blob, filename, payload);
   } catch (e) {
     console.error("Webhook send failed:", e);
     alert("Nie udało się wysłać do webhooka (szczegóły w konsoli).");
