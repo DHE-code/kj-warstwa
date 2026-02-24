@@ -166,9 +166,11 @@ function getParam(name) {
   return v ? v.trim() : "";
 }
 
-// Uwaga: najlepiej podawać webhook URL-encoded w linku:
+// Zalecane: podawaj URL-encoded, np.:
 // ?webhook=https%3A%2F%2Fhook.eu2.make.com%2Fxxxx
 const WEBHOOK_URL = getParam("webhook");
+
+/* ================== GRID ================== */
 
 function generateGrid() {
   rows = Math.max(1, +rowsInput.value);
@@ -193,16 +195,24 @@ function shuffle(arr) { return arr.sort(() => Math.random() - 0.5); }
 
 function clearActive() {
   if (!cells.length) return;
-  cells.flat().forEach(cell => cell.classList.remove("active"));
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cell = cells[r]?.[c];
+      if (cell) cell.classList.remove("active");
+    }
+  }
 }
 
 function setActive(r, c) {
-  cells[r][c].classList.add("active");
+  const cell = cells[r]?.[c];
+  if (cell) cell.classList.add("active");
 }
 
 function randomCol() {
   return Math.floor(Math.random() * cols);
 }
+
+/* ================== RANDOMIZE ================== */
 
 function randomize() {
   if (!cells.length) return;
@@ -240,7 +250,8 @@ function randomize() {
   const activeSet = new Set();
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      if (cells[r][c].classList.contains("active")) activeSet.add(`${r},${c}`);
+      const cell = cells[r]?.[c];
+      if (cell && cell.classList.contains("active")) activeSet.add(`${r},${c}`);
     }
   }
 
@@ -256,26 +267,37 @@ function randomize() {
   }
 }
 
-/* ====== WEBHOOK SEND ======
-   Wersja "simple request" minimalizuje problemy CORS/preflight.
-   Make nadal dostaje JSON jako tekst i można go parsować w Make.
+/* ================== WEBHOOK ==================
+   "simple request" (text/plain) minimalizuje problemy CORS/preflight.
+   Make dostaje JSON jako tekst.
 */
 async function sendToWebhook(webhookUrl, payload) {
   await fetch(webhookUrl, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=UTF-8" },
     body: JSON.stringify(payload),
-    keepalive: true, // pomaga gdy user szybko zamknie kartę
+    keepalive: true,
   });
 }
+
+/* ================== SAVE IMAGE ================== */
 
 async function saveImage() {
   if (!cells.length) return;
 
-  // blokada, jeśli nie wylosowano nic
-  const flatCells = cells.flat();
-  const hasActive = flatCells.some(cell => cell.classList.contains("active"));
-  if (!hasActive) {
+  // Zbierz aktywne pola (bezpiecznie)
+  const active = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cell = cells[r]?.[c];
+      if (cell && cell.classList.contains("active")) {
+        active.push({ r, c });
+      }
+    }
+  }
+
+  // Blokada jeśli nie losowano
+  if (active.length === 0) {
     alert("Najpierw kliknij: Losuj");
     return;
   }
@@ -294,13 +316,6 @@ async function saveImage() {
 
   // wysyłka do webhooka
   if (WEBHOOK_URL) {
-    const active = flatCells.flatMap((cell, idx) => {
-      if (!cell.classList.contains("active")) return [];
-      const r = Math.floor(idx / cols);
-      const c = idx % cols;
-      return [{ r, c }];
-    });
-
     const payload = {
       filename: `losowanie_${rows}x${cols}.png`,
       rows,
@@ -308,7 +323,7 @@ async function saveImage() {
       active,
       image_data_url: dataUrl,
       ts: new Date().toISOString(),
-      page_url: window.location.href,
+      page_url: window.location.href
     };
 
     try {
