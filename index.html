@@ -166,32 +166,34 @@ function getParam(name) {
   return v ? v.trim() : "";
 }
 
+// Uwaga: najlepiej podawać webhook URL-encoded w linku:
+// ?webhook=https%3A%2F%2Fhook.eu2.make.com%2Fxxxx
 const WEBHOOK_URL = getParam("webhook");
 
 function generateGrid() {
-    rows = Math.max(1, +rowsInput.value);
-    cols = Math.max(1, +colsInput.value);
+  rows = Math.max(1, +rowsInput.value);
+  cols = Math.max(1, +colsInput.value);
 
-    grid.innerHTML = "";
-    grid.style.gridTemplateColumns = `repeat(${cols}, 30px)`;
-    cells = [];
+  grid.innerHTML = "";
+  grid.style.gridTemplateColumns = `repeat(${cols}, 30px)`;
+  cells = [];
 
-    for (let r = 0; r < rows; r++) {
-        cells[r] = [];
-        for (let c = 0; c < cols; c++) {
-            const d = document.createElement("div");
-            d.className = "cell";
-            grid.appendChild(d);
-            cells[r][c] = d;
-        }
+  for (let r = 0; r < rows; r++) {
+    cells[r] = [];
+    for (let c = 0; c < cols; c++) {
+      const d = document.createElement("div");
+      d.className = "cell";
+      grid.appendChild(d);
+      cells[r][c] = d;
     }
+  }
 }
 
 function shuffle(arr) { return arr.sort(() => Math.random() - 0.5); }
 
 function clearActive() {
   if (!cells.length) return;
-  cells.flat().forEach(c => c.classList.remove("active"));
+  cells.flat().forEach(cell => cell.classList.remove("active"));
 }
 
 function setActive(r, c) {
@@ -203,121 +205,119 @@ function randomCol() {
 }
 
 function randomize() {
-    if (!cells.length) return;
+  if (!cells.length) return;
 
-    clearActive();
+  clearActive();
 
-    const totalCells = rows * cols;
-    const target = Math.min(ILE_POLOW, totalCells);
+  const totalCells = rows * cols;
+  const target = Math.min(ILE_POLOW, totalCells);
 
-    if (rows === 1) {
-      const used = new Set();
-      while (used.size < target) {
-        const c = randomCol();
-        used.add(c);
-      }
-      for (const c of used) setActive(0, c);
-      return;
-    }
-
-    if (rows > ILE_POLOW) {
-        const selectedRows = new Set();
-        selectedRows.add(0);
-        selectedRows.add(rows - 1);
-
-        const middle = Array.from({length: rows - 2}, (_, i) => i + 1);
-        shuffle(middle);
-
-        while (selectedRows.size < ILE_POLOW) {
-          selectedRows.add(middle.pop());
-        }
-
-        for (const r of selectedRows) {
-          setActive(r, randomCol());
-        }
-        return;
-    }
-
-    for (let r = 0; r < rows; r++) {
-      setActive(r, randomCol());
-    }
-
-    let already = rows;
-    let remaining = target - already;
-    if (remaining <= 0) return;
-
-    const activeSet = new Set();
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (cells[r][c].classList.contains("active")) activeSet.add(`${r},${c}`);
-      }
-    }
-
-    while (remaining > 0) {
-      const r = Math.floor(Math.random() * rows);
-      const c = randomCol();
-      const key = `${r},${c}`;
-      if (!activeSet.has(key)) {
-        activeSet.add(key);
-        setActive(r, c);
-        remaining--;
-      }
-    }
-}
-
-async function sendToWebhook(webhookUrl, payload) {
-  const res = await fetch(webhookUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    throw new Error(`Webhook HTTP ${res.status} ${res.statusText} ${txt}`);
+  if (rows === 1) {
+    const used = new Set();
+    while (used.size < target) used.add(randomCol());
+    for (const c of used) setActive(0, c);
+    return;
   }
 
-  try { return await res.json(); }
-  catch { return await res.text(); }
+  if (rows > ILE_POLOW) {
+    const selectedRows = new Set([0, rows - 1]);
+
+    const middle = Array.from({ length: rows - 2 }, (_, i) => i + 1);
+    shuffle(middle);
+
+    while (selectedRows.size < ILE_POLOW) selectedRows.add(middle.pop());
+
+    for (const r of selectedRows) setActive(r, randomCol());
+    return;
+  }
+
+  // rows <= 10: każdy wiersz ma 1 pole
+  for (let r = 0; r < rows; r++) setActive(r, randomCol());
+
+  let remaining = target - rows;
+  if (remaining <= 0) return;
+
+  const activeSet = new Set();
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (cells[r][c].classList.contains("active")) activeSet.add(`${r},${c}`);
+    }
+  }
+
+  while (remaining > 0) {
+    const r = Math.floor(Math.random() * rows);
+    const c = randomCol();
+    const key = `${r},${c}`;
+    if (!activeSet.has(key)) {
+      activeSet.add(key);
+      setActive(r, c);
+      remaining--;
+    }
+  }
+}
+
+/* ====== WEBHOOK SEND ======
+   Wersja "simple request" minimalizuje problemy CORS/preflight.
+   Make nadal dostaje JSON jako tekst i można go parsować w Make.
+*/
+async function sendToWebhook(webhookUrl, payload) {
+  await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=UTF-8" },
+    body: JSON.stringify(payload),
+    keepalive: true, // pomaga gdy user szybko zamknie kartę
+  });
 }
 
 async function saveImage() {
-    if (!cells.length) return;
+  if (!cells.length) return;
 
-    const hasActive = cells.flat().some(c => c.classList.contains("active"));
-    if (!hasActive) {
-        alert("Najpierw kliknij: Losuj");
-        return;
-    }
+  // blokada, jeśli nie wylosowano nic
+  const flatCells = cells.flat();
+  const hasActive = flatCells.some(cell => cell.classList.contains("active"));
+  if (!hasActive) {
+    alert("Najpierw kliknij: Losuj");
+    return;
+  }
 
-    const el = document.getElementById("capture");
-    const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff" });
-    const dataUrl = canvas.toDataURL("image/png");
+  const el = document.getElementById("capture");
+  const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff" });
+  const dataUrl = canvas.toDataURL("image/png");
 
-    const a = document.createElement("a");
-    a.href = dataUrl;
-    a.download = `losowanie_${rows}x${cols}.png`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+  // zapis lokalny
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = `losowanie_${rows}x${cols}.png`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 
-    if (WEBHOOK_URL) {
-      const payload = {
-        filename: `losowanie_${rows}x${cols}.png`,
-        rows,
-        cols,
-        image_data_url: dataUrl,
-        active: cells.flatMap((cell, idx) => {
-          if (!cell.classList.contains("active")) return [];
-          const r = Math.floor(idx / cols);
-          const c = idx % cols;
-          return [{ r, c }];
-        }),
-        ts: new Date().toISOString(),
-      };
+  // wysyłka do webhooka
+  if (WEBHOOK_URL) {
+    const active = flatCells.flatMap((cell, idx) => {
+      if (!cell.classList.contains("active")) return [];
+      const r = Math.floor(idx / cols);
+      const c = idx % cols;
+      return [{ r, c }];
+    });
 
+    const payload = {
+      filename: `losowanie_${rows}x${cols}.png`,
+      rows,
+      cols,
+      active,
+      image_data_url: dataUrl,
+      ts: new Date().toISOString(),
+      page_url: window.location.href,
+    };
+
+    try {
       await sendToWebhook(WEBHOOK_URL, payload);
+    } catch (e) {
+      console.error("Webhook send failed:", e);
+      alert("Nie udało się wysłać do webhooka (szczegóły w konsoli).");
     }
+  }
 }
 </script>
 
