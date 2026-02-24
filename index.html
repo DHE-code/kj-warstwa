@@ -166,9 +166,10 @@ function getParam(name) {
   return v ? v.trim() : "";
 }
 
-// Zalecane: podawaj URL-encoded, np.:
-// ?webhook=https%3A%2F%2Fhook.eu2.make.com%2Fxxxx
+// Link w Glide buduj tak:
+// https://dhe-code.github.io/kj-warstwa/?row_id=ROWID&webhook=MAKE_WEBHOOK
 const WEBHOOK_URL = getParam("webhook");
+const ROW_ID = getParam("row_id");
 
 /* ================== GRID ================== */
 
@@ -268,8 +269,7 @@ function randomize() {
 }
 
 /* ================== WEBHOOK ==================
-   "simple request" (text/plain) minimalizuje problemy CORS/preflight.
-   Make dostaje JSON jako tekst.
+   Wysyłamy jako text/plain (simple request), Make dostaje JSON w body.
 */
 async function sendToWebhook(webhookUrl, payload) {
   await fetch(webhookUrl, {
@@ -296,9 +296,18 @@ async function saveImage() {
     }
   }
 
-  // Blokada jeśli nie losowano
   if (active.length === 0) {
     alert("Najpierw kliknij: Losuj");
+    return;
+  }
+
+  if (!ROW_ID) {
+    alert("Brak parametru row_id w linku.");
+    return;
+  }
+
+  if (!WEBHOOK_URL) {
+    alert("Brak parametru webhook w linku.");
     return;
   }
 
@@ -314,24 +323,23 @@ async function saveImage() {
   a.click();
   a.remove();
 
-  // wysyłka do webhooka
-  if (WEBHOOK_URL) {
-    const payload = {
-      filename: `losowanie_${rows}x${cols}.png`,
-      rows,
-      cols,
-      active,
-      image_data_url: dataUrl,
-      ts: new Date().toISOString(),
-      page_url: window.location.href
-    };
+  // wysyłka do Make
+  const payload = {
+    row_id: ROW_ID,
+    filename: `losowanie_${rows}x${cols}.png`,
+    rows,
+    cols,
+    active,
+    image_data_url: dataUrl,
+    ts: new Date().toISOString(),
+    page_url: window.location.href
+  };
 
-    try {
-      await sendToWebhook(WEBHOOK_URL, payload);
-    } catch (e) {
-      console.error("Webhook send failed:", e);
-      alert("Nie udało się wysłać do webhooka (szczegóły w konsoli).");
-    }
+  try {
+    await sendToWebhook(WEBHOOK_URL, payload);
+  } catch (e) {
+    console.error("Webhook send failed:", e);
+    alert("Nie udało się wysłać do webhooka (szczegóły w konsoli).");
   }
 }
 </script>
