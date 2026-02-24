@@ -268,16 +268,37 @@ function randomize() {
   }
 }
 
-/* ================== WEBHOOK ==================
-   Wysyłamy jako text/plain (simple request), Make dostaje JSON w body.
-*/
-async function sendToWebhook(webhookUrl, payload) {
-  await fetch(webhookUrl, {
+/* ================== WEBHOOK (multipart/form-data) ================== */
+
+async function sendToWebhookMultipart(webhookUrl, fileBlob, filename, payloadJson) {
+  const fd = new FormData();
+
+  // pola tekstowe
+  fd.append("row_id", payloadJson.row_id);
+  fd.append("filename", filename);
+  fd.append("rows", String(payloadJson.rows));
+  fd.append("cols", String(payloadJson.cols));
+  fd.append("active", JSON.stringify(payloadJson.active));
+  fd.append("ts", payloadJson.ts);
+  fd.append("page_url", payloadJson.page_url);
+
+  // plik
+  fd.append("file", fileBlob, filename);
+
+  const res = await fetch(webhookUrl, {
     method: "POST",
-    headers: { "Content-Type": "text/plain;charset=UTF-8" },
-    body: JSON.stringify(payload),
+    body: fd,
     keepalive: true,
   });
+
+  const txt = await res.text().catch(() => "");
+  if (!res.ok) {
+    throw new Error(`Webhook HTTP ${res.status}: ${txt || res.statusText}`);
+  }
+
+  // opcjonalnie: Make może zwrócić JSON (np. URL pliku)
+  try { return txt ? JSON.parse(txt) : { ok: true }; }
+  catch { return { ok: true, raw: txt }; }
 }
 
 /* ================== SAVE IMAGE ================== */
@@ -313,30 +334,35 @@ async function saveImage() {
 
   const el = document.getElementById("capture");
   const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff" });
-  const dataUrl = canvas.toDataURL("image/png");
 
-  // zapis lokalny
+  const filename = `losowanie_${rows}x${cols}.png`;
+
+  // zapis lokalny (jak chcesz)
+  const dataUrl = canvas.toDataURL("image/png");
   const a = document.createElement("a");
   a.href = dataUrl;
-  a.download = `losowanie_${rows}x${cols}.png`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
 
-  // wysyłka do Make
+  // canvas -> Blob (plik)
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("canvas.toBlob zwrócił null"))), "image/png");
+  });
+
+  // payload (bez base64!)
   const payload = {
     row_id: ROW_ID,
-    filename: `losowanie_${rows}x${cols}.png`,
     rows,
     cols,
     active,
-    image_data_url: dataUrl,
     ts: new Date().toISOString(),
     page_url: window.location.href
   };
 
   try {
-    await sendToWebhook(WEBHOOK_URL, payload);
+    await sendToWebhookMultipart(WEBHOOK_URL, blob, filename, payload);
   } catch (e) {
     console.error("Webhook send failed:", e);
     alert("Nie udało się wysłać do webhooka (szczegóły w konsoli).");
