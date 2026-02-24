@@ -161,14 +161,12 @@ const grid = document.getElementById("grid");
 const rowsInput = document.getElementById("rows");
 const colsInput = document.getElementById("cols");
 
-
 function getParam(name) {
   const v = new URLSearchParams(window.location.search).get(name);
   return v ? v.trim() : "";
 }
 
 const WEBHOOK_URL = getParam("webhook");
-
 
 function generateGrid() {
     rows = Math.max(1, +rowsInput.value);
@@ -203,7 +201,6 @@ function setActive(r, c) {
 function randomCol() {
   return Math.floor(Math.random() * cols);
 }
-
 
 function randomize() {
     if (!cells.length) return;
@@ -268,7 +265,6 @@ function randomize() {
     }
 }
 
-
 async function sendToWebhook(webhookUrl, payload) {
   const res = await fetch(webhookUrl, {
     method: "POST",
@@ -285,15 +281,19 @@ async function sendToWebhook(webhookUrl, payload) {
   catch { return await res.text(); }
 }
 
-
 async function saveImage() {
     if (!cells.length) return;
+
+    const hasActive = cells.flat().some(c => c.classList.contains("active"));
+    if (!hasActive) {
+        alert("Najpierw kliknij: Losuj");
+        return;
+    }
 
     const el = document.getElementById("capture");
     const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff" });
     const dataUrl = canvas.toDataURL("image/png");
 
-    // zapis lokalny
     const a = document.createElement("a");
     a.href = dataUrl;
     a.download = `losowanie_${rows}x${cols}.png`;
@@ -301,7 +301,6 @@ async function saveImage() {
     a.click();
     a.remove();
 
-    // wysyłka do webhooka
     if (WEBHOOK_URL) {
       const payload = {
         filename: `losowanie_${rows}x${cols}.png`,
