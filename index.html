@@ -166,10 +166,10 @@ function getParam(name) {
   return v ? v.trim() : "";
 }
 
-// Link w Glide buduj tak:
-// https://dhe-code.github.io/kj-warstwa/?row_id=ROWID&webhook=MAKE_WEBHOOK
+// Parametry z URL
 const WEBHOOK_URL = getParam("webhook");
-const ROW_ID = getParam("row_id");
+const ID_BOX = getParam("id_box");
+const NUMER_WARSTWY = getParam("numer_warstwy");
 
 /* ================== GRID ================== */
 
@@ -242,7 +242,6 @@ function randomize() {
     return;
   }
 
-  // rows <= 10: każdy wiersz ma 1 pole
   for (let r = 0; r < rows; r++) setActive(r, randomCol());
 
   let remaining = target - rows;
@@ -268,37 +267,14 @@ function randomize() {
   }
 }
 
-/* ================== WEBHOOK (multipart/form-data) ================== */
-
-async function sendToWebhookMultipart(webhookUrl, fileBlob, filename, payloadJson) {
-  const fd = new FormData();
-
-  // pola tekstowe
-  fd.append("row_id", payloadJson.row_id);
-  fd.append("filename", filename);
-  fd.append("rows", String(payloadJson.rows));
-  fd.append("cols", String(payloadJson.cols));
-  fd.append("active", JSON.stringify(payloadJson.active));
-  fd.append("ts", payloadJson.ts);
-  fd.append("page_url", payloadJson.page_url);
-
-  // plik
-  fd.append("file", fileBlob, filename);
-
-  const res = await fetch(webhookUrl, {
+/* ================== WEBHOOK ================== */
+async function sendToWebhook(webhookUrl, payload) {
+  await fetch(webhookUrl, {
     method: "POST",
-    body: fd,
+    headers: { "Content-Type": "text/plain;charset=UTF-8" },
+    body: JSON.stringify(payload),
     keepalive: true,
   });
-
-  const txt = await res.text().catch(() => "");
-  if (!res.ok) {
-    throw new Error(`Webhook HTTP ${res.status}: ${txt || res.statusText}`);
-  }
-
-  // opcjonalnie: Make może zwrócić JSON (np. URL pliku)
-  try { return txt ? JSON.parse(txt) : { ok: true }; }
-  catch { return { ok: true, raw: txt }; }
 }
 
 /* ================== SAVE IMAGE ================== */
@@ -306,14 +282,11 @@ async function sendToWebhookMultipart(webhookUrl, fileBlob, filename, payloadJso
 async function saveImage() {
   if (!cells.length) return;
 
-  // Zbierz aktywne pola (bezpiecznie)
   const active = [];
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const cell = cells[r]?.[c];
-      if (cell && cell.classList.contains("active")) {
-        active.push({ r, c });
-      }
+      if (cell && cell.classList.contains("active")) active.push({ r, c });
     }
   }
 
@@ -322,8 +295,13 @@ async function saveImage() {
     return;
   }
 
-  if (!ROW_ID) {
-    alert("Brak parametru row_id w linku.");
+  if (!ID_BOX) {
+    alert("Brak parametru id_box w linku.");
+    return;
+  }
+
+  if (!NUMER_WARSTWY) {
+    alert("Brak parametru numer_warstwy w linku.");
     return;
   }
 
@@ -334,35 +312,30 @@ async function saveImage() {
 
   const el = document.getElementById("capture");
   const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff" });
-
-  const filename = `losowanie_${rows}x${cols}.png`;
-
-  // zapis lokalny (jak chcesz)
   const dataUrl = canvas.toDataURL("image/png");
+
+  // (opcjonalnie) zapis lokalny
   const a = document.createElement("a");
   a.href = dataUrl;
-  a.download = filename;
+  a.download = `losowanie_${rows}x${cols}_box${ID_BOX}_w${NUMER_WARSTWY}.png`;
   document.body.appendChild(a);
   a.click();
   a.remove();
 
-  // canvas -> Blob (plik)
-  const blob = await new Promise((resolve, reject) => {
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("canvas.toBlob zwrócił null"))), "image/png");
-  });
-
-  // payload (bez base64!)
   const payload = {
-    row_id: ROW_ID,
+    id_box: ID_BOX,
+    numer_warstwy: NUMER_WARSTWY,
+    filename: `losowanie_${rows}x${cols}_box${ID_BOX}_w${NUMER_WARSTWY}.png`,
     rows,
     cols,
     active,
+    image_data_url: dataUrl,
     ts: new Date().toISOString(),
     page_url: window.location.href
   };
 
   try {
-    await sendToWebhookMultipart(WEBHOOK_URL, blob, filename, payload);
+    await sendToWebhook(WEBHOOK_URL, payload);
   } catch (e) {
     console.error("Webhook send failed:", e);
     alert("Nie udało się wysłać do webhooka (szczegóły w konsoli).");
