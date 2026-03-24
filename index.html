@@ -67,6 +67,7 @@ h2 {
     display: flex;
     gap: 10px;
     justify-content: space-between;
+    flex-wrap: wrap;
 }
 
 button {
@@ -78,6 +79,7 @@ button {
     cursor: pointer;
     color: white;
     background: var(--primary);
+    transition: background 0.2s ease, opacity 0.2s ease;
 }
 
 button:hover { background: var(--primary-hover); }
@@ -87,6 +89,35 @@ button.secondary {
 }
 button.secondary:hover {
     background: #000000;
+}
+
+button:disabled {
+    background: #9ca3af !important;
+    cursor: not-allowed;
+    opacity: 0.85;
+}
+
+.status-message {
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.4;
+    display: none;
+}
+
+.status-message.info {
+    display: block;
+    background: #eff6ff;
+    color: #1e3a8a;
+    border: 1px solid #bfdbfe;
+}
+
+.status-message.error {
+    display: block;
+    background: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
 }
 
 .grid-container {
@@ -136,10 +167,12 @@ button.secondary:hover {
     </div>
 
     <div class="buttons">
-        <button onclick="generateGrid()">Generuj</button>
-        <button onclick="randomize()">Losuj</button>
-        <button class="secondary" onclick="saveImage()">Zapisz obraz</button>
+        <button id="generateBtn" onclick="generateGrid()">Generuj</button>
+        <button id="randomizeBtn" onclick="randomize()">Losuj</button>
+        <button id="saveBtn" class="secondary" onclick="saveImage()">Zapisz obraz</button>
     </div>
+
+    <div id="statusMessage" class="status-message"></div>
 </div>
 
 <div class="grid-container">
@@ -161,6 +194,11 @@ const grid = document.getElementById("grid");
 const rowsInput = document.getElementById("rows");
 const colsInput = document.getElementById("cols");
 
+const generateBtn = document.getElementById("generateBtn");
+const randomizeBtn = document.getElementById("randomizeBtn");
+const saveBtn = document.getElementById("saveBtn");
+const statusMessage = document.getElementById("statusMessage");
+
 function getParam(name) {
   const v = new URLSearchParams(window.location.search).get(name);
   return v ? v.trim() : "";
@@ -172,11 +210,31 @@ const WEBHOOK_URL   = getParam("webhook");
 const ID_BOX        = getParam("id_box");
 const NUMER_WARSTWY = getParam("numer_warstwy");
 
+function showMessage(text, type = "info") {
+  statusMessage.textContent = text;
+  statusMessage.className = `status-message ${type}`;
+}
+
+function clearMessage() {
+  statusMessage.textContent = "";
+  statusMessage.className = "status-message";
+}
+
+function setSavingState(isSaving) {
+  saveBtn.disabled = isSaving;
+  generateBtn.disabled = isSaving;
+  randomizeBtn.disabled = isSaving;
+
+  saveBtn.textContent = isSaving ? "Wysyłanie..." : "Zapisz obraz";
+}
+
 /* ================== GRID ================== */
 
 function generateGrid() {
   rows = Math.max(1, +rowsInput.value);
   cols = Math.max(1, +colsInput.value);
+
+  clearMessage();
 
   grid.innerHTML = "";
   grid.style.gridTemplateColumns = `repeat(${cols}, 30px)`;
@@ -219,6 +277,7 @@ function randomCol() {
 function randomize() {
   if (!cells.length) return;
 
+  clearMessage();
   clearActive();
 
   const totalCells = rows * cols;
@@ -243,7 +302,6 @@ function randomize() {
     return;
   }
 
-  // rows <= 10: każdy wiersz ma 1 pole
   for (let r = 0; r < rows; r++) setActive(r, randomCol());
 
   let remaining = target - rows;
@@ -274,7 +332,6 @@ function randomize() {
 async function sendToWebhookMultipart(webhookUrl, fileBlob, filename, payloadJson) {
   const fd = new FormData();
 
-  // pola tekstowe (OSOBNO jak wcześniej)
   fd.append("id_box", payloadJson.id_box);
   fd.append("numer_warstwy", payloadJson.numer_warstwy);
 
@@ -285,7 +342,6 @@ async function sendToWebhookMultipart(webhookUrl, fileBlob, filename, payloadJso
   fd.append("ts", payloadJson.ts);
   fd.append("page_url", payloadJson.page_url);
 
-  // plik
   fd.append("file", fileBlob, filename);
 
   const res = await fetch(webhookUrl, {
@@ -338,37 +394,45 @@ async function saveImage() {
     return;
   }
 
-  const el = document.getElementById("capture");
-  const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff" });
-
-  const filename = `losowanie_${rows}x${cols}.png`;
-
-  const blob = await new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (b) => (b ? resolve(b) : reject(new Error("canvas.toBlob zwrócił null"))),
-      "image/png"
-    );
-  });
-
-  const payload = {
-    id_box: ID_BOX,
-    numer_warstwy: NUMER_WARSTWY,
-    rows,
-    cols,
-    active,
-    ts: new Date().toISOString(),
-    page_url: window.location.href
-  };
+  setSavingState(true);
+  showMessage("Możesz zamknąć okno losowania, zdjęcie za chwilę pokaże Ci się w aplikacji.", "info");
 
   try {
+    const el = document.getElementById("capture");
+    const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff" });
+
+    const filename = `losowanie_${rows}x${cols}.png`;
+
+    const blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("canvas.toBlob zwrócił null"))),
+        "image/png"
+      );
+    });
+
+    const payload = {
+      id_box: ID_BOX,
+      numer_warstwy: NUMER_WARSTWY,
+      rows,
+      cols,
+      active,
+      ts: new Date().toISOString(),
+      page_url: window.location.href
+    };
+
     await sendToWebhookMultipart(WEBHOOK_URL, blob, filename, payload);
+
+    saveBtn.textContent = "Wysłano";
   } catch (e) {
     console.error("Webhook send failed:", e);
-    alert("Nie udało się wysłać do webhooka (szczegóły w konsoli).");
+    showMessage("Nie udało się wysłać obrazu do aplikacji. Możesz spróbować ponownie po odświeżeniu strony.", "error");
+    setSavingState(false);
   }
 }
-</script>
 
+/* start */
+generateGrid();
+</script>
 
 </body>
 </html>
