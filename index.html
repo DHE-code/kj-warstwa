@@ -167,8 +167,7 @@ button:disabled {
     </div>
 
     <div class="buttons">
-        <button id="generateBtn" onclick="generateGrid()">Generuj</button>
-        <button id="randomizeBtn" onclick="randomize()">Losuj</button>
+        <button id="randomizeBtn" onclick="generateAndRandomize()">Losuj</button>
         <button id="saveBtn" class="secondary" onclick="saveImage()">Zapisz obraz</button>
     </div>
 
@@ -189,12 +188,12 @@ const ILE_POLOW = 10;
 let rows = 0;
 let cols = 0;
 let cells = [];
+let hasRandomized = false;
 
 const grid = document.getElementById("grid");
 const rowsInput = document.getElementById("rows");
 const colsInput = document.getElementById("cols");
 
-const generateBtn = document.getElementById("generateBtn");
 const randomizeBtn = document.getElementById("randomizeBtn");
 const saveBtn = document.getElementById("saveBtn");
 const statusMessage = document.getElementById("statusMessage");
@@ -204,8 +203,6 @@ function getParam(name) {
   return v ? v.trim() : "";
 }
 
-// Link w Glide buduj tak:
-// https://dhe-code.github.io/kj-warstwa/?id_box=IDBOX&numer_warstwy=NUMER&webhook=MAKE_WEBHOOK
 const WEBHOOK_URL   = getParam("webhook");
 const ID_BOX        = getParam("id_box");
 const NUMER_WARSTWY = getParam("numer_warstwy");
@@ -220,21 +217,26 @@ function clearMessage() {
   statusMessage.className = "status-message";
 }
 
-function setSavingState(isSaving) {
-  saveBtn.disabled = isSaving;
-  generateBtn.disabled = isSaving;
-  randomizeBtn.disabled = isSaving;
+function updateSaveButtonState() {
+  saveBtn.disabled = !hasRandomized;
+}
 
+function setSavingState(isSaving) {
+  saveBtn.disabled = isSaving || !hasRandomized;
+  randomizeBtn.disabled = isSaving;
   saveBtn.textContent = isSaving ? "Wysyłanie..." : "Zapisz obraz";
+}
+
+function invalidateRandomization() {
+  hasRandomized = false;
+  updateSaveButtonState();
 }
 
 /* ================== GRID ================== */
 
-function generateGrid() {
+function buildGrid() {
   rows = Math.max(1, +rowsInput.value);
   cols = Math.max(1, +colsInput.value);
-
-  clearMessage();
 
   grid.innerHTML = "";
   grid.style.gridTemplateColumns = `repeat(${cols}, 30px)`;
@@ -251,7 +253,9 @@ function generateGrid() {
   }
 }
 
-function shuffle(arr) { return arr.sort(() => Math.random() - 0.5); }
+function shuffle(arr) {
+  return arr.sort(() => Math.random() - 0.5);
+}
 
 function clearActive() {
   if (!cells.length) return;
@@ -272,12 +276,11 @@ function randomCol() {
   return Math.floor(Math.random() * cols);
 }
 
-/* ================== RANDOMIZE ================== */
+/* ================== GENERATE + RANDOMIZE ================== */
 
-function randomize() {
-  if (!cells.length) return;
-
+function generateAndRandomize() {
   clearMessage();
+  buildGrid();
   clearActive();
 
   const totalCells = rows * cols;
@@ -287,61 +290,75 @@ function randomize() {
     const used = new Set();
     while (used.size < target) used.add(randomCol());
     for (const c of used) setActive(0, c);
+
+    hasRandomized = true;
+    updateSaveButtonState();
     return;
   }
 
   if (rows > ILE_POLOW) {
     const selectedRows = new Set([0, rows - 1]);
-
     const middle = Array.from({ length: rows - 2 }, (_, i) => i + 1);
     shuffle(middle);
 
-    while (selectedRows.size < ILE_POLOW) selectedRows.add(middle.pop());
+    while (selectedRows.size < ILE_POLOW) {
+      selectedRows.add(middle.pop());
+    }
 
     for (const r of selectedRows) setActive(r, randomCol());
+
+    hasRandomized = true;
+    updateSaveButtonState();
     return;
   }
 
-  for (let r = 0; r < rows; r++) setActive(r, randomCol());
+  for (let r = 0; r < rows; r++) {
+    setActive(r, randomCol());
+  }
 
   let remaining = target - rows;
-  if (remaining <= 0) return;
+  if (remaining > 0) {
+    const activeSet = new Set();
 
-  const activeSet = new Set();
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const cell = cells[r]?.[c];
-      if (cell && cell.classList.contains("active")) activeSet.add(`${r},${c}`);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const cell = cells[r]?.[c];
+        if (cell && cell.classList.contains("active")) {
+          activeSet.add(`${r},${c}`);
+        }
+      }
+    }
+
+    while (remaining > 0) {
+      const r = Math.floor(Math.random() * rows);
+      const c = randomCol();
+      const key = `${r},${c}`;
+
+      if (!activeSet.has(key)) {
+        activeSet.add(key);
+        setActive(r, c);
+        remaining--;
+      }
     }
   }
 
-  while (remaining > 0) {
-    const r = Math.floor(Math.random() * rows);
-    const c = randomCol();
-    const key = `${r},${c}`;
-    if (!activeSet.has(key)) {
-      activeSet.add(key);
-      setActive(r, c);
-      remaining--;
-    }
-  }
+  hasRandomized = true;
+  updateSaveButtonState();
 }
 
-/* ================== WEBHOOK (multipart/form-data) ================== */
+/* ================== WEBHOOK ================== */
 
 async function sendToWebhookMultipart(webhookUrl, fileBlob, filename, payloadJson) {
   const fd = new FormData();
 
   fd.append("id_box", payloadJson.id_box);
   fd.append("numer_warstwy", payloadJson.numer_warstwy);
-
   fd.append("filename", filename);
   fd.append("rows", String(payloadJson.rows));
   fd.append("cols", String(payloadJson.cols));
   fd.append("active", JSON.stringify(payloadJson.active));
   fd.append("ts", payloadJson.ts);
   fd.append("page_url", payloadJson.page_url);
-
   fd.append("file", fileBlob, filename);
 
   const res = await fetch(webhookUrl, {
@@ -355,14 +372,20 @@ async function sendToWebhookMultipart(webhookUrl, fileBlob, filename, payloadJso
     throw new Error(`Webhook HTTP ${res.status}: ${txt || res.statusText}`);
   }
 
-  try { return txt ? JSON.parse(txt) : { ok: true }; }
-  catch { return { ok: true, raw: txt }; }
+  try {
+    return txt ? JSON.parse(txt) : { ok: true };
+  } catch {
+    return { ok: true, raw: txt };
+  }
 }
 
 /* ================== SAVE IMAGE ================== */
 
 async function saveImage() {
-  if (!cells.length) return;
+  if (!cells.length || !hasRandomized) {
+    alert("Najpierw kliknij: Losuj");
+    return;
+  }
 
   const active = [];
   for (let r = 0; r < rows; r++) {
@@ -421,7 +444,6 @@ async function saveImage() {
     };
 
     await sendToWebhookMultipart(WEBHOOK_URL, blob, filename, payload);
-
     saveBtn.textContent = "Wysłano";
   } catch (e) {
     console.error("Webhook send failed:", e);
@@ -430,8 +452,13 @@ async function saveImage() {
   }
 }
 
+/* zmiana wymiarów unieważnia poprzednie losowanie */
+rowsInput.addEventListener("input", invalidateRandomization);
+colsInput.addEventListener("input", invalidateRandomization);
+
 /* start */
-generateGrid();
+buildGrid();
+updateSaveButtonState();
 </script>
 
 </body>
